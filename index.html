@@ -594,10 +594,7 @@ const USER_EMAILS = {
 // Globale Rolle (wird im onAuthStateChanged gesetzt)
 let currentUserRole = "gast";
 
-// Falls adminMode noch nicht existiert, hier Standard setzen
-if (typeof adminMode === "undefined") {
-  var adminMode = false;
-}
+
 
 // DOM-Elemente
 const authCard       = document.getElementById('auth-card');
