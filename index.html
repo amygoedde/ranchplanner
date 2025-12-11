@@ -552,25 +552,23 @@
   </main>
 
 <script type="module">
-  /* --- Hier kommt dein Firebase-Codeblock rein --- */
 
+  /* --- Firebase-Imports --- */
   import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
   import { 
     getFirestore, 
     doc, 
     getDoc, 
-    setDoc, 
-    getDocs, 
-    collection 
+    setDoc
   } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
-import {
-  getAuth,
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  signOut
-} from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+  import {
+    getAuth,
+    signInWithEmailAndPassword
+  } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 
+
+  /* --- Firebase-Konfiguration --- */
   const firebaseConfig = {
     apiKey: "AIzaSyBd2ZvhLQ4O0b_FLfqjLQImwR8jTkw7FXc",
     authDomain: "ranch-planner.firebaseapp.com",
@@ -581,137 +579,133 @@ import {
   };
 
   const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
+  const db  = getFirestore(app);
   const auth = getAuth(app);
-  
-  // --- LOGIN & Rollen ---
-// Benutzername → interne Firebase-E-Mail
-const USER_EMAILS = {
-  "reiter": "reiter@ranch-planner.local",
-  "stallbesitzer": "stallbesitzer@ranch-planner.local"
-};
-
-// Globale Rolle (wird im onAuthStateChanged gesetzt)
-let currentUserRole = "gast";
 
 
+  /* --- Globale Daten (müssen VOR allen Renderfunktionen existieren!) --- */
+  let horses      = [];
+  let manurePlan  = {};
+  let todos       = [];
+  let newsEntries = [];
 
-// DOM-Elemente
-const authCard       = document.getElementById('auth-card');
-const navEl          = document.querySelector('nav');
-const mainEl         = document.querySelector('main');
-const authUsernameEl = document.getElementById('auth-username');
-const authPasswordEl = document.getElementById('auth-password');
-const authLoginBtn   = document.getElementById('auth-login-btn');
-const authMessageEl  = document.getElementById('auth-message');
 
-// UI ein-/ausblenden
-function showAppUI() {
-  if (authCard) authCard.style.display = 'none';
-  if (navEl)    navEl.style.display    = '';
-  if (mainEl)   mainEl.style.display   = '';
-}
+  /* --- LOGIN SYSTEM --- */
 
-function showAuthUI() {
-  if (authCard) authCard.style.display = 'block';
-  if (navEl)    navEl.style.display    = 'none';
-  if (mainEl)   mainEl.style.display   = 'none';
-}
+  // Benutzername → Firebase-E-Mail
+  const USER_EMAILS = {
+    "reiter": "reiter@ranch-planner.local",
+    "stallbesitzer": "stallbesitzer@ranch-planner.local"
+  };
 
-// Statusmeldung beim Login
-function setAuthMessage(msg) {
-  if (authMessageEl) {
-    authMessageEl.textContent = msg || '';
+  let currentUserRole = "gast";
+  let adminMode = false;   // Nur einmal definiert – wichtig!
+
+
+  // DOM Login-Felder
+  const authCard       = document.getElementById('auth-card');
+  const navEl          = document.querySelector('nav');
+  const mainEl         = document.querySelector('main');
+  const authUsernameEl = document.getElementById('auth-username');
+  const authPasswordEl = document.getElementById('auth-password');
+  const authLoginBtn   = document.getElementById('auth-login-btn');
+  const authMessageEl  = document.getElementById('auth-message');
+
+
+  /* --- UI Funktionen --- */
+  function showAppUI() {
+    authCard.style.display = 'none';
+    navEl.style.display    = '';
+    mainEl.style.display   = '';
   }
-}
 
-// Login-Button
-if (authLoginBtn) {
+  function showAuthUI() {
+    authCard.style.display = 'block';
+    navEl.style.display    = 'none';
+    mainEl.style.display   = 'none';
+  }
+
+  function setAuthMessage(msg) {
+    authMessageEl.textContent = msg || "";
+  }
+
+
+  /* --- Login-Button Logik --- */
   authLoginBtn.addEventListener('click', async () => {
-    const usernameRaw = (authUsernameEl?.value || '').trim();
-    const password    = authPasswordEl?.value || '';
 
-    setAuthMessage('');
+    const usernameRaw = authUsernameEl.value.trim();
+    const password    = authPasswordEl.value.trim();
+
+    setAuthMessage("");
 
     if (!usernameRaw || !password) {
-      setAuthMessage('Bitte Benutzername und Passwort eingeben.');
-      return;
+      return setAuthMessage("Bitte Benutzername und Passwort eingeben.");
     }
 
     const username = usernameRaw.toLowerCase();
     const email = USER_EMAILS[username];
 
     if (!email) {
-      setAuthMessage('Benutzer unbekannt. Nutze "Reiter" oder "Stallbesitzer".');
-      return;
+      return setAuthMessage('Benutzer unbekannt. Nutze "Reiter" oder "Stallbesitzer".');
     }
 
-        try {
-      // Bei Firebase einloggen
+    try {
       await signInWithEmailAndPassword(auth, email, password);
 
-      // Rolle setzen
-      if (email === 'stallbesitzer@ranch-planner.local') {
-        currentUserRole = 'stallbesitzer';
+      // Rollen setzen
+      if (username === "stallbesitzer") {
         adminMode = true;
-      } else if (email === 'reiter@ranch-planner.local') {
-        currentUserRole = 'reiter';
+        currentUserRole = "stallbesitzer";
+      } 
+      else {
         adminMode = false;
-      } else {
-        currentUserRole = 'gast';
-        adminMode = false;
+        currentUserRole = "reiter";
       }
 
-      // Daten aus der Cloud laden und UI aufbauen
-      await initApp();
-      if (typeof updateAdminUI === 'function') {
-        updateAdminUI();
-      }
+      // App laden
+      await initApp();      // ← DEINE eigene Funktion unterhalb dieses Scripts
+      updateAdminUI?.();    // Falls existiert
       showAppUI();
-
-      setAuthMessage('Erfolgreich eingeloggt.');
 
     } catch (err) {
       console.error(err);
-      setAuthMessage('Login fehlgeschlagen. Passwort prüfen.');
+      setAuthMessage("Login fehlgeschlagen. Passwort prüfen.");
     }
-
   });
-}
 
 
-// --- CLOUD-SPEICHER: Daten aus Firestore laden ---
-async function loadCloud(key, fallback) {
-  try {
-    const ref = doc(db, "ranch", key);
-    const snap = await getDoc(ref);
 
-    if (snap.exists()) {
-      return snap.data().value; // wir speichern alles unter "value"
-    } else {
+  /* --- Firestore Laden --- */
+  async function loadCloud(key, fallback) {
+    try {
+      const ref = doc(db, "ranch", key);
+      const snap = await getDoc(ref);
+
+      if (snap.exists()) {
+        return snap.data().value;
+      }
+      return fallback;
+
+    } catch (err) {
+      console.error("Fehler beim Laden:", key, err);
       return fallback;
     }
-
-  } catch (err) {
-    console.error("Fehler beim Laden:", key, err);
-    return fallback;
   }
-}
 
-// --- CLOUD-SPEICHER: Daten in Firestore speichern ---
-async function saveCloud(key, value) {
-  try {
-    const ref = doc(db, "ranch", key);
-    await setDoc(ref, { value });
-  } catch (err) {
-    console.error("Fehler beim Speichern:", key, err);
+
+  /* --- Firestore Speichern --- */
+  async function saveCloud(key, value) {
+    try {
+      const ref = doc(db, "ranch", key);
+      await setDoc(ref, { value });
+
+    } catch (err) {
+      console.error("Fehler beim Speichern:", key, err);
+    }
   }
-}
-// --- Zentrale Datenstrukturen ---
-let horses = [];
-let manurePlan = {};
-let todos = [];
-let newsEntries = [];
+
+
+
 
 
     // --- Base64 Bild für Startseite ---
@@ -726,11 +720,7 @@ let newsEntries = [];
       // Fallback-Platzhalter, wenn kein Base64-String gesetzt ist
       heroImgEl.src = "https://placehold.co/800x250?text=Blitz+und+Donner+Ranch";
     }
-// --- Zentrale Datenstrukturen (global, werden später aus der Cloud gefüllt) ---
-let horses = [];
-let manurePlan = {};
-let todos = [];
-let newsEntries = [];
+
 
     // --- Dashboard-Elemente ---
     const dashDateEl = document.getElementById('dashboard-date');
