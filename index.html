@@ -419,50 +419,45 @@
       <div class="card">
         <h2>Tagesüberblick</h2>
         <p class="small">
-          Übersicht für heute: <span id="dashboard-date">–</span>
-        </p>
-        <div class="dashboard-grid">
-          <div class="dash-item">
-            <div class="dash-label">Gesamtzahl Pferde</div>
-            <div class="dash-value" id="dash-total-horses">0</div>
-          </div>
-          <div class="dash-item">
-            <div class="dash-label">Reitstunde heute</div>
-            <div class="dash-value" id="dash-lesson-count">0</div>
-            <div class="dash-note">geplante Stunden</div>
-          </div>
-          <div class="dash-item">
-            <div class="dash-label">Pause heute</div>
-            <div class="dash-value" id="dash-break-count">0</div>
-          </div>
-          <div class="dash-item">
-            <div class="dash-label">Reitbeteiligung heute</div>
-            <div class="dash-value" id="dash-share-count">0</div>
-          </div>
-          <div class="dash-item">
-            <div class="dash-label">Sonstiges heute</div>
-            <div class="dash-value" id="dash-other-count">0</div>
-          </div>
-          <div class="dash-item">
-            <div class="dash-label">Ohne Eintrag heute</div>
-            <div class="dash-value" id="dash-empty-count">0</div>
-          </div>
-          <div class="dash-item">
-            <div class="dash-label">Mistplan heute</div>
-            <div class="dash-value" id="dash-manure-person">–</div>
-            <div class="dash-note">wer eingetragen ist</div>
-          </div>
-          <div class="dash-item">
-            <div class="dash-label">Offene To-Dos</div>
-            <div class="dash-value" id="dash-open-todos">0</div>
-            <div class="dash-note">noch nicht erledigt</div>
-          </div>
-          <div class="dash-item">
-            <div class="dash-label">Aktuelle Infos</div>
-            <div class="dash-value" id="dash-news-count">0</div>
-          </div>
-        </div>
-      </div>
+  Heute: <span id="dashboard-date">–</span>
+</p>
+
+<!-- Freie Pferde (keine Auswahl getroffen) -->
+<div class="dash-item" style="margin-top:0.5rem;">
+  <div class="dash-label" style="display:flex; align-items:center; justify-content:space-between; gap:0.5rem;">
+    <span>Freie Pferde</span>
+    <button id="free-info-btn" class="btn-secondary" style="margin:0; padding:0.15rem 0.6rem;">ℹ️</button>
+  </div>
+  <div class="dash-value" id="free-count">0</div>
+  <div id="free-dropdown" class="small" style="display:none; margin-top:0.4rem; line-height:1.5;"></div>
+</div>
+
+<!-- Mist heute -->
+<div class="dash-item" style="margin-top:0.75rem;">
+  <div class="dash-label">Wer mistet heute?</div>
+  <div class="dash-value" id="day-manure">–</div>
+</div>
+
+<!-- Offene To-Dos (kurz) -->
+<div class="dash-item" style="margin-top:0.75rem;">
+  <div class="dash-label">Offene To-Dos</div>
+  <div class="dash-value" id="dash-open-todos">0</div>
+  <div class="dash-note">noch nicht erledigt</div>
+  <div id="day-todos" class="small" style="margin-top:0.4rem;"></div>
+</div>
+
+<hr class="divider">
+
+<!-- Tages-Tabelle: Pferd + heutige Belegung -->
+<div class="dash-item" style="margin-top:0.25rem;">
+  <div class="dash-label" style="margin-bottom:0.4rem;">Tagesplan (Kurzüberblick)</div>
+  <div style="display:grid; grid-template-columns: 1fr auto; gap:0.5rem; align-items:center;">
+    <div class="small" style="color:#aaa;">Pferd</div>
+    <div class="small" style="color:#aaa; text-align:right;">Heutige Belegung</div>
+  </div>
+  <div id="day-table" style="margin-top:0.5rem;"></div>
+</div>
+
     </section>
 
     <!-- PFERDEBELEGUNGEN -->
@@ -502,6 +497,20 @@
       <div class="card" id="horse-detail-card" style="display:none;">
         <h3 id="horse-detail-title">Pferdeplan</h3>
         <div id="horse-detail-content"></div>
+		<div class="divider"></div>
+
+		<div class="flex" style="justify-content:space-between; align-items:center;">
+		<div class="small">
+			<strong id="save-status">Bereit</strong>
+		<span style="color:#888;"> · Auto-Save aktiv</span>
+		
+		</div>
+		
+		<button id="last-change-btn" class="btn-secondary" style="margin:0; padding:0.15rem 0.6rem;">❕</button>
+</div>
+
+<div id="last-change-pop" class="small" style="display:none; margin-top:0.4rem; color:#aaa;"></div>
+
       </div>
     </section>
 
@@ -734,61 +743,164 @@
     const dashOpenTodosEl = document.getElementById('dash-open-todos');
     const dashNewsCountEl = document.getElementById('dash-news-count');
 
-    function getTodayISO() {
-      const d = new Date();
-      return d.toISOString().substring(0, 10);
+  
+
+    // --------- Helper für Datum ----------
+	function getTodayISO() {
+	const d = new Date();
+	return d.toISOString().slice(0, 10);
+	}
+
+	function formatTodayDE() {
+	const d = new Date();
+	return d.toLocaleDateString('de-DE', {
+    weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric'
+	});
+	}
+	// schützt HTML-Ausgabe vor Sonderzeichen
+function escapeHtml(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+	let saveTimer = null;
+let lastChangeTS = 0;
+
+function setSaveStatus(t){
+  const el = document.getElementById("save-status");
+  if(el) el.textContent = t;
+}
+
+function showLastChangeIfToday(){
+  const btn = document.getElementById("last-change-btn");
+  const pop = document.getElementById("last-change-pop");
+  if(!btn || !pop) return;
+
+  btn.onclick = () => {
+    if(!lastChangeTS){
+      pop.textContent = "Heute noch keine Änderungen.";
+      pop.style.display = (pop.style.display === "none" || !pop.style.display) ? "block" : "none";
+      return;
     }
+    const d = new Date(lastChangeTS);
+    const today = new Date();
+    const sameDay = d.toDateString() === today.toDateString();
 
-    function renderDashboard() {
-      const todayISO = getTodayISO();
-      const todayDate = new Date();
-      if (dashDateEl) {
-        dashDateEl.textContent = todayDate.toLocaleDateString('de-DE', {
-          weekday: 'long',
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric'
-        });
-      }
-
-      const totalHorses = horses.length;
-      let lesson = 0;
-      let brk = 0;
-      let share = 0;
-      let other = 0;
-      let empty = 0;
-
-      horses.forEach(horse => {
-        const s = horse.schedules && horse.schedules[todayISO];
-        let t = s && s.type ? s.type : '';
-        if (t === 'Frei') t = 'Pause'; // alte Daten abfangen
-
-        if (!s || (!t && !s.custom)) {
-          empty++;
-        } else {
-          if (t === 'Reitstunde') lesson++;
-          else if (t === 'Pause') brk++;
-          else if (t === 'Reitbeteiligung') share++;
-          else if (t === 'Sonstiges') other++;
-          else empty++; // falls nur Custom-Text ohne Typ
-        }
-      });
-
-      if (dashTotalHorsesEl) dashTotalHorsesEl.textContent = totalHorses;
-      if (dashLessonCountEl) dashLessonCountEl.textContent = lesson;
-      if (dashBreakCountEl) dashBreakCountEl.textContent = brk;
-      if (dashShareCountEl) dashShareCountEl.textContent = share;
-      if (dashOtherCountEl) dashOtherCountEl.textContent = other;
-      if (dashEmptyCountEl) dashEmptyCountEl.textContent = empty;
-
-      const manureToday = manurePlan[todayISO] || '–';
-      if (dashManurePersonEl) dashManurePersonEl.textContent = manureToday || '–';
-
-      const openTodos = todos.filter(t => !t.done).length;
-      if (dashOpenTodosEl) dashOpenTodosEl.textContent = openTodos;
-
-      if (dashNewsCountEl) dashNewsCountEl.textContent = newsEntries.length;
+    if(!sameDay){
+      pop.textContent = "Letzte Änderung war nicht heute.";
+    } else {
+      pop.textContent = "Letzte Änderung: " + d.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' });
     }
+    pop.style.display = (pop.style.display === "none" || !pop.style.display) ? "block" : "none";
+  };
+}
+
+async function saveHorsesDebounced(){
+  setSaveStatus("Speichere …");
+  if(saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(async ()=>{
+    try{
+      await saveCloud("horses", horses);
+      lastChangeTS = Date.now();
+      setSaveStatus("Gespeichert ✓");
+      renderDayOverview();
+      // Optional: wenn du Liste/Detail neu renderst, hier auch aufrufen:
+      // renderHorseList();
+    }catch(e){
+      console.error(e);
+      setSaveStatus("Speichern fehlgeschlagen");
+    }
+  }, 500);
+}
+
+	
+	// --------- Badge/Typ ----------
+	function normalizeType(t){
+	if(!t) return "";
+	if(t === "Frei") return "Pause"; // alte Daten abfangen
+	return t;
+	}
+
+	function badgeForType(type){
+		const t = normalizeType(type);
+		if(t === "Reitstunde") return `<span class="badge badge-lesson">Reitstunde</span>`;
+		if(t === "Pause") return `<span class="badge badge-break">Pause</span>`;
+		if(t === "Reitbeteiligung") return `<span class="badge badge-share">Reitbeteiligung</span>`;
+		if(t === "Sonstiges") return `<span class="badge badge-other">Sonstiges</span>`;
+		return `<span class="badge">–</span>`;
+		}
+
+	function renderDayOverview(){
+		const todayISO = getTodayISO();
+
+	// Datum oben
+	const dashDateEl = document.getElementById('dashboard-date');
+	if(dashDateEl) dashDateEl.textContent = formatTodayDE();
+
+	// freie Pferde = kein Typ + kein Custom
+	const free = (horses || []).filter(h => {
+    const s = h.schedules?.[todayISO];
+    const type = normalizeType(s?.type || "");
+    const custom = (s?.custom || "").trim();
+    return (!type && !custom);
+  });
+
+  const freeCountEl = document.getElementById("free-count");
+  const freeDropdown = document.getElementById("free-dropdown");
+  if(freeCountEl) freeCountEl.textContent = String(free.length);
+
+  if(freeDropdown){
+    freeDropdown.innerHTML = free.length
+      ? free.map(h => `• ${escapeHtml(h.name)}`).join("<br>")
+      : `<span class="small" style="color:#aaa;">Keine freien Pferde 🎉</span>`;
+  }
+
+  // ℹ️ Toggle
+  const freeInfoBtn = document.getElementById("free-info-btn");
+  if(freeInfoBtn && freeDropdown){
+    freeInfoBtn.onclick = () => {
+      freeDropdown.style.display = (freeDropdown.style.display === "none" || !freeDropdown.style.display) ? "block" : "none";
+    };
+  }
+
+  // Mist heute
+  const dayManureEl = document.getElementById("day-manure");
+  if(dayManureEl) dayManureEl.textContent = (manurePlan?.[todayISO] || "–");
+
+  // Offene To-Dos Count + Liste
+  const dashOpenTodosEl = document.getElementById('dash-open-todos');
+  const dayTodosEl = document.getElementById("day-todos");
+  const open = (todos || []).filter(t => !t.done);
+
+  if(dashOpenTodosEl) dashOpenTodosEl.textContent = String(open.length);
+  if(dayTodosEl){
+    dayTodosEl.innerHTML = open.length
+      ? open.slice(0,5).map(t=>`• ${escapeHtml(t.text)}`).join("<br>")
+      : `<span style="color:#aaa;">Keine offenen To-Dos</span>`;
+  }
+
+  // Tages-Tabelle (Pferd + Badge)
+  const dayTableEl = document.getElementById("day-table");
+  if(dayTableEl){
+    dayTableEl.innerHTML = (horses || []).map(h => {
+      const s = h.schedules?.[todayISO];
+      const type = normalizeType(s?.type || "");
+      const custom = (s?.custom || "").trim();
+      const shown = type ? badgeForType(type) : (custom ? `<span class="badge">${escapeHtml(custom)}</span>` : badgeForType(""));
+      return `
+        <div style="display:grid; grid-template-columns: 1fr auto; gap:0.5rem; align-items:center; padding:0.45rem 0; border-top:1px solid #222;">
+          <div style="font-weight:600;">${escapeHtml(h.name)}</div>
+          <div style="text-align:right;">${shown}</div>
+        </div>
+      `;
+    }).join("");
+  }
+}
+
 
     // --- Bilder-Pool für Pferde ---
     // Hier kannst du eigene Bilddateien oder Base64-Bilder eintragen.
@@ -871,7 +983,8 @@
       if (currentHorseIndex !== null) {
         showHorseDetail(currentHorseIndex);
       }
-      renderDashboard();
+      renderDayOverview();
+
     }
 
     adminToggleBtn.addEventListener('click', () => {
@@ -952,7 +1065,8 @@
       horseListEl.innerHTML = '';
       if (horses.length === 0) {
         horseListEl.innerHTML = '<p class="small">Noch keine Pferde angelegt.</p>';
-        renderDashboard();
+        renderDayOverview();
+
         return;
       }
 
@@ -994,7 +1108,8 @@
         horseListEl.appendChild(item);
       });
 
-      renderDashboard();
+      renderDayOverview();
+
     }
 
     function horseNameExists(name, ignoreIndex = null) {
@@ -1059,7 +1174,8 @@
       }
       saveCloud("horses", horses);
 
-      renderDashboard();
+      renderDayOverview();
+
     }
 
     function showHorseDetail(index) {
@@ -1067,6 +1183,9 @@
       const horse = horses[index];
       horseDetailCard.style.display = 'block';
       horseDetailTitle.textContent = horse.name + ' – 14-Tage-Plan';
+		setSaveStatus("Bereit");
+	showLastChangeIfToday();
+	window.scrollTo({ top: 0, behavior: "smooth" }); // sofort hinspringen
 
       horseDetailContent.innerHTML = '';
 
@@ -1293,7 +1412,8 @@
           manurePlan[day.iso] = input.value.trim();
           saveCloud("manure", manurePlan);
 
-          renderDashboard();
+          renderDayOverview();
+
         });
 
         row.appendChild(input);
@@ -1314,7 +1434,8 @@
       todoListEl.innerHTML = '';
       if (todos.length === 0) {
         todoListEl.innerHTML = '<li class="small">Noch keine Aufgaben.</li>';
-        renderDashboard();
+        renderDayOverview();
+
         return;
       }
 
@@ -1343,7 +1464,8 @@
         todoListEl.appendChild(li);
       });
 
-      renderDashboard();
+      renderDayOverview();
+
     }
 
     function addTodo() {
@@ -1371,50 +1493,131 @@
     const addNewsBtn = document.getElementById('add-news-btn');
     const newsListEl = document.getElementById('news-list');
 
-    function renderNews() {
-      newsListEl.innerHTML = '';
-      if (newsEntries.length === 0) {
-        newsListEl.innerHTML = '<p class="small">Noch keine Infos vorhanden.</p>';
-        renderDashboard();
-        return;
-      }
-      newsEntries.forEach((entry, index) => {
-        const wrapper = document.createElement('div');
-        wrapper.className = 'card';
-        wrapper.style.background = '#070707';
-        wrapper.style.marginBottom = '0.6rem';
+   function ensureReactions(n){
+  n.reactions = n.reactions || {};
+  n.reactions.like  = n.reactions.like  || { count:0, byRole:{} };
+  n.reactions.heart = n.reactions.heart || { count:0, byRole:{} };
+}
+function toggleReaction(n, key){
+  ensureReactions(n);
+  const r = n.reactions[key];
+  const role = currentUserRole || "gast";
+  const has = !!r.byRole[role];
+  if(has){
+    delete r.byRole[role];
+    r.count = Math.max(0, (r.count||0)-1);
+  } else {
+    r.byRole[role] = true;
+    r.count = (r.count||0)+1;
+  }
+}
 
-        const titleEl = document.createElement('h4');
-        titleEl.textContent = entry.title || 'Info';
-        const textEl = document.createElement('p');
-        textEl.textContent = entry.text;
+function renderNews(){
+  newsListEl.innerHTML = "";
 
-        const metaEl = document.createElement('div');
-        metaEl.className = 'small';
-        metaEl.textContent = entry.date || '';
+  const list = (newsEntries || []).slice().sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  for(const n of list){
+    n.id = n.id || ("n_" + Math.random().toString(36).slice(2));
+    n.comments = n.comments || [];
+    ensureReactions(n);
 
-        wrapper.appendChild(titleEl);
-        wrapper.appendChild(textEl);
-        wrapper.appendChild(metaEl);
+    const wrapper = document.createElement("div");
+    wrapper.className = "card";
+    wrapper.style.background = "#070707";
+    wrapper.style.marginBottom = "0.6rem";
 
-        if (adminMode) {
-          const delBtn = document.createElement('button');
-          delBtn.className = 'btn-secondary';
-          delBtn.textContent = 'Löschen';
-          delBtn.addEventListener('click', () => {
-            newsEntries.splice(index, 1);
-            saveCloud("news", newsEntries);
+    const commentsId = `comments-${n.id}`;
 
-            renderNews();
-          });
-          wrapper.appendChild(delBtn);
-        }
+    wrapper.innerHTML = `
+      <div style="display:flex; justify-content:space-between; gap:10px;">
+        <div>
+          <h4 style="margin:0 0 0.35rem 0;">${escapeHtml(n.title || "Info")}</h4>
+          <p style="margin:0;">${escapeHtml(n.text || "")}</p>
+          <div class="small" style="margin-top:0.35rem; color:#aaa;">
+            ${n.date || ""}
+          </div>
+        </div>
+        ${adminMode ? `<button class="btn-secondary" data-del style="height:34px;">Löschen</button>` : ``}
+      </div>
 
-        newsListEl.appendChild(wrapper);
+      <div class="flex" style="margin-top:0.75rem;">
+        <button class="btn-secondary" data-react="like">👍 ${n.reactions.like.count||0}</button>
+        <button class="btn-secondary" data-react="heart">❤️ ${n.reactions.heart.count||0}</button>
+        <button class="btn-secondary" data-toggle-comments>Kommentare (${n.comments.length})</button>
+      </div>
+
+      <div id="${commentsId}" style="display:none; margin-top:0.75rem;">
+        <div class="small" style="color:#aaa; margin-bottom:0.4rem;">Kommentare</div>
+
+        <div data-comments-list>
+          ${
+            n.comments.length
+              ? n.comments.map(c=>`
+                <div style="padding:0.45rem 0; border-top:1px solid #222;">
+                  <strong>${escapeHtml(c.name||"")}</strong>
+                  <div class="small" style="color:#aaa;">${escapeHtml(c.text||"")}</div>
+                </div>
+              `).join("")
+              : `<div class="small" style="color:#aaa;">Noch keine Kommentare</div>`
+          }
+        </div>
+
+        <div class="card" style="margin-top:0.75rem;">
+          <label>Name</label>
+          <input type="text" class="inline-input" data-c-name placeholder="Dein Name">
+          <label style="margin-top:0.5rem;">Kommentar</label>
+          <textarea data-c-text></textarea>
+          <button class="btn" style="margin-top:0.6rem;" data-c-send>Senden</button>
+        </div>
+      </div>
+    `;
+
+    // Löschen (Admin)
+    const delBtn = wrapper.querySelector("[data-del]");
+    if(delBtn){
+      delBtn.addEventListener("click", async ()=>{
+        if(!confirm("Info löschen?")) return;
+        newsEntries = newsEntries.filter(x=>x.id !== n.id);
+        await saveCloud("news", newsEntries);
+        renderNews();
+        renderDayOverview();
       });
-
-      renderDashboard();
     }
+
+    // Reactions
+    wrapper.querySelectorAll("[data-react]").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        const key = btn.getAttribute("data-react");
+        toggleReaction(n, key);
+        await saveCloud("news", newsEntries);
+        renderNews();
+      });
+    });
+
+    // Kommentare Toggle
+    const toggleBtn = wrapper.querySelector("[data-toggle-comments]");
+    const commentsWrap = wrapper.querySelector(`#${commentsId}`);
+    toggleBtn.addEventListener("click", ()=>{
+      commentsWrap.style.display = (commentsWrap.style.display === "none" || !commentsWrap.style.display) ? "block" : "none";
+    });
+
+    // Kommentar senden
+    wrapper.querySelector("[data-c-send]").addEventListener("click", async ()=>{
+      const name = wrapper.querySelector("[data-c-name]").value.trim();
+      const text = wrapper.querySelector("[data-c-text]").value.trim();
+      if(!name || !text) return;
+
+      n.comments.push({ name, text, at: Date.now() });
+      await saveCloud("news", newsEntries);
+      renderNews();
+    });
+
+    newsListEl.appendChild(wrapper);
+  }
+
+  renderDayOverview();
+}
+
 
     function addNews() {
       if (!adminMode) {
@@ -1426,7 +1629,8 @@
       if (!text) return;
       const now = new Date();
       const dateStr = now.toLocaleString('de-DE');
-      newsEntries.unshift({ title, text, date: dateStr });
+      newsEntries.unshift({ id: "n_" + Date.now(), title, text, date: dateStr, createdAt: Date.now(), comments: [], reactions: {} });
+
       saveCloud("news", newsEntries);
 
       newsTitleInput.value = '';
@@ -1438,8 +1642,8 @@
     renderNews();
 
     // Initiales Dashboard-Rendering
-    renderDashboard();
-	
+    renderDayOverview();
+
 	async function initApp() {
   horses = await loadCloud("horses", []);
   manurePlan = await loadCloud("manure", {});
@@ -1450,7 +1654,8 @@
   renderManurePlan();
   renderTodos();
   renderNews();
-  renderDashboard();
+  renderDayOverview();
+
 }
 showAuthUI();
   </script>
